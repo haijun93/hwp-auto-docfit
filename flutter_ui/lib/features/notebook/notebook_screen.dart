@@ -4,14 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/drop_events.dart';
+import '../editor/memo_editor.dart';
 import '../library/library_api.dart';
 import '../library/library_screen.dart';
 import '../workspace/tab_navigation_shell.dart' show HostClosablePage;
 import 'notebook_api.dart';
 
-/// 노트북 화면(개발자 모드). 세 칸: 출처 · 근거 찾기/미리보기/변환 · 노트.
+/// 노트북 화면(개발자 모드). 세 칸: 출처 · 본문검색/미리보기/변환 · 노트.
 /// 폭이 [kNotebookWideWidth] 미만이면 세 칸을 탭으로 바꾼다.
 const kNotebookWideWidth = 1000.0;
+
+/// 본문검색 결과·출처 비교·미리보기 본문의 기본 글자 크기: 10pt.
+/// 기준: Flutter 논리 픽셀 1px = 1/96인치(Windows 100% 배율의 화면 픽셀, CSS px와 같음), 1pt = 1/72인치
+/// → 10pt = 10 × 96 ÷ 72 ≈ 13.33 논리 픽셀. Windows 배율(125%·150%)은 기기 픽셀 비율로, 접근성 글자 확대는
+/// textScaler로 따로 곱해지므로 여기서는 크기를 고정해 호스트의 기본 글자 크기(약 30px로 보이던 원인)에 끌려가지 않게 한다.
+const kNbReadingFontSize = 10 * 96 / 72;
+const _readingStyle = TextStyle(fontSize: kNbReadingFontSize, height: 1.5);
 
 enum _Middle { search, compare, preview, transform }
 
@@ -75,6 +83,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
   /// 노트 목록을 거르는 태그(null이면 전체).
   String? _tagFilter;
   String? _status;
+
+  /// '+메모 추가' 편집기의 자동 저장 초안(출처로 저장하거나 삭제하면 비운다). 노트북 화면이 열려 있는 동안 유지된다.
+  MemoDocument? _memoDraft;
   bool _busy = false;
   bool _loaded = false;
   void Function()? _stopDrops;
@@ -132,7 +143,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
       final known = _sources.map((s) => s.id).toSet();
       _sources = sources;
       _checked.removeWhere((id) => !sources.any((s) => s.id == id));
-      // 새로 들어온 출처는 근거 찾기 범위에 넣어 둔다.
+      // 새로 들어온 출처는 본문검색 범위에 넣어 둔다.
       _checked.addAll(sources.where((s) => !known.contains(s.id)).map((s) => s.id));
       _notes = notes;
       if (_tagFilter != null && !notes.any((n) => n.tags.contains(_tagFilter))) _tagFilter = null;
@@ -215,6 +226,34 @@ class _NotebookScreenState extends State<NotebookScreen> {
     final trimmed = path?.trim().replaceAll('"', '') ?? '';
     if (trimmed.isEmpty) return;
     await _addPaths([trimmed]);
+  }
+
+  /// '+메모 추가': 메모 편집기를 열고, 저장하면 TEXT 형식 출처로 넣는다. 닫기만 하면 초안은 남는다.
+  Future<void> _addMemo() async {
+    final nb = _notebook;
+    if (nb == null) return;
+    final controller = MemoEditorController();
+    final initial = _memoDraft ?? const MemoDocument(title: '새 메모', markdown: '');
+    final saved = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (context) => _MemoPage(
+          initial: initial,
+          controller: controller,
+          onAutoSave: (doc) async {
+            if (mounted) setState(() => _memoDraft = doc);
+          },
+          onDelete: () {
+            setState(() => _memoDraft = null);
+            Navigator.of(context).pop();
+          },
+          onSave: (doc) =>
+              widget.api.addMemoSource(nb.id, title: doc.title.isEmpty ? '새 메모' : doc.title, markdown: doc.markdown),
+        ),
+      ),
+    );
+    if (!mounted || saved == null) return;
+    setState(() => _memoDraft = null);
+    await _run(_loadNotebookContent, done: '메모를 출처에 추가했습니다.');
   }
 
   /// 여러 파일을 차례로 출처로 넣는다. 하나가 실패해도 나머지는 계속한다.
@@ -648,17 +687,30 @@ class _NotebookScreenState extends State<NotebookScreen> {
               onPressed: _busy ? null : _importFromLibrary,
               icon: const Icon(Icons.inventory_2_outlined, size: 18),
             ),
-          TextButton.icon(
-            key: const ValueKey('nb-source-add'),
-            onPressed: _busy ? null : _addSource,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('출처 추가'),
-          ),
         ]),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Wrap(
+            children: [
+              TextButton.icon(
+                key: const ValueKey('nb-source-add'),
+                onPressed: _busy ? null : _addSource,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('출처 추가'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('nb-memo-add'),
+                onPressed: _busy ? null : _addMemo,
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(_memoDraft == null ? '메모 추가' : '메모 추가(작성 중)'),
+              ),
+            ],
+          ),
+        ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            '체크한 출처에서만 근거를 찾습니다. 파일을 이 창에 끌어 놓아도 출처로 추가됩니다.',
+            '체크한 출처에서만 본문검색합니다. 파일을 이 창에 끌어 놓아도 출처로 추가됩니다.',
             style: TextStyle(fontSize: 12, color: Colors.black54),
           ),
         ),
@@ -723,7 +775,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
             runSpacing: 4,
             children: [
               for (final (mode, key, label) in const [
-                (_Middle.search, 'nb-mid-search', '근거 찾기'),
+                (_Middle.search, 'nb-mid-search', '본문검색'),
                 (_Middle.compare, 'nb-mid-compare', '출처 비교'),
                 (_Middle.preview, 'nb-mid-preview', '미리보기'),
                 (_Middle.transform, 'nb-mid-transform', '변환'),
@@ -774,7 +826,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
               FilledButton(
                 key: const ValueKey('nb-search-run'),
                 onPressed: _busy ? null : _search,
-                child: const Text('근거 찾기'),
+                child: const Text('본문검색'),
               ),
             ],
           ),
@@ -798,7 +850,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      _highlighted(hit.body, _queryController.text),
+                      _highlighted(hit.body, _queryController.text, key: ValueKey('nb-hit-body-$i')),
                       Wrap(
                         alignment: WrapAlignment.end,
                         spacing: 4,
@@ -920,7 +972,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 4),
-                                  _highlighted(group.hits[i].body, _compareQuery ?? ''),
+                                  _highlighted(
+                                    group.hits[i].body,
+                                    _compareQuery ?? '',
+                                    key: ValueKey('nb-compare-body-${group.sourceId}-$i'),
+                                  ),
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: IconButton(
@@ -944,10 +1000,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
     );
   }
 
-  /// 검색어와 일치하는 부분을 굵게 보인다.
-  Widget _highlighted(String body, String query) {
+  /// 검색어와 일치하는 부분을 굵게 보인다. 글자 크기는 [kNbReadingFontSize](10pt) 고정.
+  Widget _highlighted(String body, String query, {Key? key}) {
     final terms = query.split(RegExp(r'\s+')).where((t) => t.length > 1).map(RegExp.escape).toList();
-    if (terms.isEmpty) return Text(body);
+    if (terms.isEmpty) return Text.rich(TextSpan(text: body, style: _readingStyle), key: key);
     final pattern = RegExp(terms.join('|'));
     final spans = <TextSpan>[];
     var start = 0;
@@ -962,7 +1018,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
       start = m.end;
     }
     if (start < body.length) spans.add(TextSpan(text: body.substring(start)));
-    return Text.rich(TextSpan(children: spans, style: DefaultTextStyle.of(context).style));
+    return Text.rich(TextSpan(children: spans, style: _readingStyle), key: key);
   }
 
   Widget _previewView() {
@@ -994,7 +1050,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 Expanded(
                   child: SelectableText(
                     p.isTable ? p.body.replaceAll('\t', '  |  ') : p.body,
-                    style: p.level > 0 ? const TextStyle(fontWeight: FontWeight.w600) : null,
+                    key: ValueKey('nb-preview-text-${p.ordinal}'),
+                    style: p.level > 0 ? _readingStyle.copyWith(fontWeight: FontWeight.w600) : _readingStyle,
                   ),
                 ),
                 IconButton(
@@ -1410,6 +1467,88 @@ class _LibraryPickDialogState extends State<_LibraryPickDialog> {
           child: Text('가져오기 ${_picked.length}개'),
         ),
       ],
+    );
+  }
+}
+
+/// 메모 편집 화면: 메모 편집기 + '출처로 저장'. 저장하면 새 출처 id로 닫는다.
+class _MemoPage extends StatefulWidget {
+  const _MemoPage({
+    required this.initial,
+    required this.controller,
+    required this.onAutoSave,
+    required this.onDelete,
+    required this.onSave,
+  });
+
+  final MemoDocument initial;
+  final MemoEditorController controller;
+  final Future<void> Function(MemoDocument) onAutoSave;
+  final VoidCallback onDelete;
+  final Future<int> Function(MemoDocument) onSave;
+
+  @override
+  State<_MemoPage> createState() => _MemoPageState();
+}
+
+class _MemoPageState extends State<_MemoPage> {
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _save() async {
+    await widget.controller.flush();
+    final doc = widget.controller.document;
+    if (doc.isBlank) {
+      setState(() => _error = '메모에 내용이 없습니다.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final id = await widget.onSave(doc);
+      if (mounted) Navigator.of(context).pop(id);
+    } catch (error) {
+      if (mounted) setState(() => _error = _errorText(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('메모'), toolbarHeight: 44),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: MemoEditor(
+          initial: widget.initial,
+          controller: widget.controller,
+          onAutoSave: widget.onAutoSave,
+          onDelete: widget.onDelete,
+          footer: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _error ?? "작성된 메모를 저장하면 TEXT 형식으로 '출처'에 추가됩니다.",
+                    key: const ValueKey('memo-hint'),
+                    style: TextStyle(fontSize: 12, color: _error == null ? Colors.black54 : Colors.red),
+                  ),
+                ),
+                FilledButton.icon(
+                  key: const ValueKey('memo-save'),
+                  onPressed: _saving ? null : _save,
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('출처로 저장'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
