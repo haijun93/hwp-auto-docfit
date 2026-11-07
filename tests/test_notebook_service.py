@@ -8,7 +8,8 @@ from unittest import mock
 
 from docfit_app.library_bridge import ALLOWED_COMMANDS, LibraryBridgeError
 from docfit_app.notebook_service import (
-    NOTEBOOK_COMMANDS, NotebookService, extract_source_paragraphs, needs_python_extraction,
+    NOTEBOOK_COMMANDS, NotebookService, extract_source_paragraphs, memo_markdown_to_paragraphs,
+    needs_python_extraction,
 )
 
 
@@ -182,6 +183,44 @@ class NotebookServiceTests(unittest.TestCase):
         self.assertEqual(bridge.calls[-1]["cmd"], "nb_search")
         with self.assertRaises(LibraryBridgeError):
             service.handle({"cmd": "box_list"})
+
+    def test_memo_markdown_to_plain_paragraphs(self):
+        markdown = ("# 회의 메모\n\n**복지 예산** 확대와 *도로* 정비\n- 첫째 `항목`\n1. 둘째\n> 인용 [자료](https://a.kr)\n"
+                    "---\n```\ncode **그대로**\n```\n")
+        rows = memo_markdown_to_paragraphs(markdown)
+        self.assertEqual([r["text"] for r in rows],
+                         ["회의 메모", "복지 예산 확대와 도로 정비", "첫째 항목", "둘째", "인용 자료 (https://a.kr)",
+                          "code **그대로**"])
+        self.assertEqual(rows[0]["level"], 1)
+        self.assertEqual(memo_markdown_to_paragraphs(" \n---\n"), [])
+
+    def test_memo_is_written_as_txt_and_added_with_plain_paragraphs(self):
+        bridge = FakeBridge()
+        memo_dir = self.dir / "memos"
+        service = NotebookService(bridge, memo_dir=memo_dir)
+        markdown = "# 제목\n\n**굵은** 본문\r\n- 목록"
+        result = service.handle({"cmd": "nb_memo_add", "notebook_id": 4, "title": '새/메모:"1"', "markdown": markdown})
+        self.assertEqual(result, {"ok": True, "id": 7, "paragraph_count": 3})
+        (add,) = bridge.calls
+        self.assertEqual((add["cmd"], add["notebook_id"], add["display_name"]), ("nb_source_add", 4, '새/메모:"1"'))
+        path = Path(add["source_path"])
+        self.assertEqual(path.parent, memo_dir)
+        self.assertEqual(path.suffix, ".txt")
+        self.assertNotIn("/", path.stem.replace("\\", ""))
+        self.assertEqual(path.read_bytes().decode("utf-8"), markdown)
+        self.assertEqual([p["text"] for p in add["paragraphs"]], ["제목", "굵은 본문", "목록"])
+        # 같은 제목으로 또 저장해도 기존 파일을 덮어쓰지 않는다.
+        service.handle({"cmd": "nb_memo_add", "notebook_id": 4, "title": '새/메모:"1"', "markdown": "둘째"})
+        self.assertEqual(len(list(memo_dir.iterdir())), 2)
+
+    def test_memo_rejects_empty_or_too_long(self):
+        bridge = FakeBridge()
+        service = NotebookService(bridge, memo_dir=self.dir / "memos")
+        self.assertFalse(service.handle({"cmd": "nb_memo_add", "notebook_id": 1, "markdown": "  \n---"})["ok"])
+        self.assertFalse(service.handle({"cmd": "nb_memo_add", "notebook_id": 1, "markdown": None})["ok"])
+        self.assertFalse(service.handle({"cmd": "nb_memo_add", "notebook_id": 1, "markdown": "가" * 200_001})["ok"])
+        self.assertEqual(bridge.calls, [])
+        self.assertFalse((self.dir / "memos").exists() and any((self.dir / "memos").iterdir()))
 
 
 class DesktopNotebookTests(unittest.TestCase):
